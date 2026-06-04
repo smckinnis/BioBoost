@@ -1,21 +1,217 @@
+cat > /mnt/user-data/outputs/bioboost-final.html << 'EOF'
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>BioBoost – LinkedIn Bio Optimizer</title>
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: Georgia, 'Times New Roman', serif; background: #F3F2EF; }
-    input, textarea, select { width: 100%; background: #F7F7F5; border: 1.5px solid #E2E0D9; border-radius: 8px; padding: 10px 14px; font-size: 14px; font-family: Georgia, serif; color: #1C1C1A; outline: none; transition: border-color 0.2s; }
-    input:focus, textarea:focus, select:focus { border-color: #1A6FD4; box-shadow: 0 0 0 3px rgba(26,111,212,0.1); }
-    button { cursor: pointer; font-family: Georgia, serif; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    @keyframes fadeUp { from { opacity:0; transform:translateY(18px); } to { opacity:1; transform:translateY(0); } }
-    .fade-up { animation: fadeUp 0.5s ease; }
-  </style>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>BioBoost – LinkedIn Bio Optimizer</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Georgia,serif;background:#F3F2EF}
+input,textarea,select{width:100%;background:#F7F7F5;border:1.5px solid #E2E0D9;border-radius:8px;padding:10px 14px;font-size:14px;font-family:Georgia,serif;color:#1C1C1A;outline:none;transition:border-color 0.2s}
+input:focus,textarea:focus,select:focus{border-color:#1A6FD4;box-shadow:0 0 0 3px rgba(26,111,212,0.1)}
+button{cursor:pointer;font-family:Georgia,serif}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
+.fadeUp{animation:fadeUp 0.5s ease}
+</style>
 </head>
 <body>
+<div id="root"></div>
+<script>
+const ANTHROPIC_API_KEY="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";
+const STRIPE_PAYMENT_LINK="https://buy.stripe.com/fZueVedbv6Bgb2zewc9sk00";
+const FREE_USES=1;
+const STORAGE_KEY="bioboost_uses";
+const NAVY="#0D1B2A",BLUE="#1A6FD4",SKY="#38BDF8",GOLD="#F59E0B",OFFWHITE="#F3F2EF",BORDER="#E2E0D9",MUTED="#8A8A82",TEXT="#1C1C1A";
+const h=React.createElement;
+const{useState,useEffect}=React;
 
+function Logo({size=40}){
+  return h('svg',{width:size,height:size,viewBox:"0 0 40 40",fill:"none"},
+    h('defs',null,h('linearGradient',{id:"g",x1:"0",y1:"0",x2:"40",y2:"40",gradientUnits:"userSpaceOnUse"},
+      h('stop',{offset:"0%",stopColor:BLUE}),h('stop',{offset:"100%",stopColor:SKY}))),
+    h('rect',{width:40,height:40,rx:10,fill:NAVY}),
+    h('path',{d:"M23 6L13 22h8l-4 12 14-18h-9l4-10z",fill:"url(#g)"}),
+    h('circle',{cx:31,cy:9,r:2.5,fill:GOLD}))
+}
+
+function CopyBtn({text}){
+  const[ok,setOk]=useState(false);
+  return h('button',{onClick:()=>{navigator.clipboard.writeText(text);setOk(true);setTimeout(()=>setOk(false),2000)},
+    style:{background:ok?"#22C55E":BLUE,color:"#fff",border:"none",borderRadius:6,padding:"7px 16px",fontSize:12,fontWeight:700}},
+    ok?"✓ Copied!":"Copy")
+}
+
+function Meter({score}){
+  const color=score>=80?"#22C55E":score>=55?GOLD:"#EF4444";
+  const label=score>=80?"Strong Profile":score>=55?"Room to Grow":"Needs Work";
+  return h('div',null,
+    h('div',{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:8}},
+      h('div',null,
+        h('div',{style:{fontSize:11,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:MUTED,marginBottom:2}},"Profile Strength"),
+        h('div',{style:{fontSize:12,fontWeight:700,color}},label)),
+      h('div',{style:{fontSize:42,fontWeight:900,color,fontFamily:"monospace",lineHeight:1}},score,
+        h('span',{style:{fontSize:16,color:MUTED}},"/100"))),
+    h('div',{style:{height:10,background:BORDER,borderRadius:99,overflow:"hidden"}},
+      h('div',{style:{height:"100%",width:`${score}%`,borderRadius:99,background:`linear-gradient(90deg,${color}99,${color})`,transition:"width 1.2s"}})))
+}
+
+function Paywall({onClose}){
+  return h('div',{style:{position:"fixed",inset:0,background:"rgba(13,27,42,0.75)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:20}},
+    h('div',{style:{background:"#fff",borderRadius:16,padding:"36px 32px",maxWidth:420,width:"100%",textAlign:"center",boxShadow:"0 32px 80px rgba(0,0,0,0.25)"}},
+      h('div',{style:{display:"flex",alignItems:"center",justifyContent:"center",gap:10,marginBottom:20}},
+        h(Logo,{size:36}),
+        h('span',{style:{fontFamily:"Georgia,serif",fontSize:20,fontWeight:900,letterSpacing:"-0.03em",color:NAVY}},"Bio",h('span',{style:{color:BLUE}},"Boost"))),
+      h('div',{style:{fontSize:22,fontWeight:900,color:NAVY,marginBottom:8,lineHeight:1.3}},"You've used your free optimization ⚡"),
+      h('p',{style:{color:MUTED,fontSize:14,marginBottom:24,lineHeight:1.6}},"Unlock ",h('strong',null,"unlimited bio optimizations")," for a one-time payment."),
+      h('div',{style:{background:OFFWHITE,borderRadius:10,padding:16,marginBottom:24,textAlign:"left"}},
+        ...["Unlimited optimizations","AI headline suggestions","SEO keywords","Profile strength score","Copy-to-clipboard"].map((b,i)=>
+          h('div',{key:i,style:{display:"flex",alignItems:"center",gap:10,padding:"5px 0",fontSize:13,color:TEXT}},
+            h('span',{style:{color:"#22C55E",fontWeight:900}},"✓")," "+b))),
+      h('a',{href:STRIPE_PAYMENT_LINK,target:"_blank",rel:"noopener noreferrer",
+        style:{display:"block",background:BLUE,color:"#fff",borderRadius:10,padding:16,fontSize:16,fontWeight:900,textDecoration:"none",marginBottom:10}},
+        "Unlock BioBoost — $9 one-time"),
+      h('div',{style:{fontSize:11,color:MUTED,marginBottom:16}},"Secure payment via Stripe · No subscription"),
+      h('button',{onClick:onClose,style:{background:"none",border:"none",color:MUTED,fontSize:13,textDecoration:"underline"}},"Maybe later")))
+}
+
+function App(){
+  const[uses,setUses]=useState(0);
+  const[paywall,setPaywall]=useState(false);
+  const[form,setForm]=useState({bio:"",role:"",industry:"",tone:"Professional",goal:"Open to opportunities",skills:"",achievement:""});
+  const[result,setResult]=useState(null);
+  const[loading,setLoading]=useState(false);
+  const[error,setError]=useState("");
+
+  useEffect(()=>{setUses(parseInt(localStorage.getItem(STORAGE_KEY)||"0"));},[]);
+
+  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+
+  const submit=async()=>{
+    if(!form.role&&!form.bio){setError("Please enter your role or existing bio.");return;}
+    if(uses>=FREE_USES){setPaywall(true);return;}
+    setError("");setLoading(true);setResult(null);
+    try{
+      const res=await fetch("https://api.anthropic.com/v1/messages",{
+        method:"POST",
+        headers:{
+          "Content-Type":"application/json",
+          "x-api-key":ANTHROPIC_API_KEY,
+          "anthropic-version":"2023-06-01",
+          "anthropic-dangerous-direct-browser-access":"true"
+        },
+        body:JSON.stringify({
+          model:"claude-sonnet-4-20250514",
+          max_tokens:1000,
+          messages:[{role:"user",content:`You are a LinkedIn profile expert. Optimize this person's bio.
+Current bio: ${form.bio||"None"}
+Role: ${form.role||"Not specified"}
+Industry: ${form.industry||"Not specified"}
+Tone: ${form.tone}
+Goal: ${form.goal}
+Skills: ${form.skills||"Not specified"}
+Achievement: ${form.achievement||"Not specified"}
+Respond ONLY with valid JSON, no markdown:
+{"score":<0-100>,"optimizedBio":"<bio text>","headline":"<headline under 120 chars>","keywords":["k1","k2","k3","k4","k5"],"improvements":["t1","t2","t3"],"cta":"<closing line>"}`}]
+        })
+      });
+      const data=await res.json();
+      const text=data.content.map(i=>i.text||"").join("");
+      setResult(JSON.parse(text.replace(/```json|```/g,"").trim()));
+      const n=uses+1;setUses(n);localStorage.setItem(STORAGE_KEY,n);
+    }catch(err){setError("Something went wrong. Please try again.");}
+    setLoading(false);
+  };
+
+  const inp={style:{width:"100%",background:"#F7F7F5",border:`1.5px solid ${BORDER}`,borderRadius:8,padding:"10px 14px",fontSize:14,fontFamily:"Georgia,serif",color:TEXT,outline:"none"}};
+  const lbl={style:{display:"block",fontSize:11,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:MUTED,marginBottom:6}};
+  const card={style:{background:"#fff",borderRadius:14,border:`1px solid ${BORDER}`,padding:24,boxShadow:"0 2px 12px rgba(0,0,0,0.04)"}};
+
+  return h('div',{style:{minHeight:"100vh",background:OFFWHITE,fontFamily:"Georgia,serif"}},
+    paywall&&h(Paywall,{onClose:()=>setPaywall(false)}),
+
+    h('header',{style:{background:"#fff",borderBottom:`1px solid ${BORDER}`,position:"sticky",top:0,zIndex:10}},
+      h('div',{style:{maxWidth:700,margin:"0 auto",padding:"16px 24px",display:"flex",alignItems:"center",justifyContent:"space-between"}},
+        h('div',{style:{display:"flex",alignItems:"center",gap:12}},
+          h(Logo,{size:36}),
+          h('span',{style:{fontFamily:"Georgia,serif",fontSize:20,fontWeight:900,letterSpacing:"-0.03em",color:NAVY}},"Bio",h('span',{style:{color:BLUE}},"Boost"))),
+        h('div',{style:{display:"flex",alignItems:"center",gap:10}},
+          h('span',{style:{fontSize:12,color:MUTED,fontWeight:600}},`${Math.max(0,FREE_USES-uses)} free use${FREE_USES-uses!==1?"s":""} left`),
+          h('a',{href:STRIPE_PAYMENT_LINK,target:"_blank",style:{background:GOLD,color:NAVY,borderRadius:6,padding:"8px 16px",fontSize:12,fontWeight:800,textDecoration:"none"}},"Go Pro — $9")))),
+
+    h('div',{style:{background:NAVY,color:"#fff",padding:"48px 24px",textAlign:"center"}},
+      h('div',{style:{maxWidth:560,margin:"0 auto"}},
+        h('div',{style:{display:"inline-flex",alignItems:"center",gap:6,background:"rgba(245,158,11,0.15)",border:"1px solid rgba(245,158,11,0.3)",borderRadius:99,padding:"4px 14px",marginBottom:16}},
+          h('span',{style:{color:GOLD,fontSize:12,fontWeight:700,letterSpacing:"0.08em"}},"⚡ AI-POWERED")),
+        h('h1',{style:{margin:"0 0 14px",fontSize:"clamp(24px,5vw,38px)",fontWeight:900,lineHeight:1.2,letterSpacing:"-0.03em"}},
+          "Your LinkedIn bio is ",h('span',{style:{color:SKY}},"costing you opportunities.")),
+        h('p',{style:{color:"#94A3B8",fontSize:15,lineHeight:1.7,maxWidth:440,margin:"0 auto"}},
+          "BioBoost rewrites your About section into a recruiter magnet — with a headline, SEO keywords, and a strength score."))),
+
+    h('div',{style:{maxWidth:700,margin:"0 auto",padding:"32px 24px 60px"}},
+
+      h('div',{style:{background:"#fff",borderRadius:14,border:`1px solid ${BORDER}`,padding:28,marginBottom:24,boxShadow:"0 2px 12px rgba(0,0,0,0.04)"}},
+        h('h2',{style:{margin:"0 0 22px",fontSize:13,fontWeight:800,color:NAVY,letterSpacing:"0.12em",textTransform:"uppercase"}},"Your Profile Details"),
+        h('div',{style:{display:"grid",gap:18}},
+          h('div',null,h('label',lbl,"Current Bio (optional)"),
+            h('textarea',{...inp,rows:3,placeholder:"Paste your existing LinkedIn About section, or leave blank...",value:form.bio,onChange:ev=>set("bio",ev.target.value),style:{...inp.style,resize:"vertical"}})),
+          h('div',{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}},
+            h('div',null,h('label',lbl,"Job Title / Role *"),h('input',{...inp,placeholder:"e.g. Senior PM",value:form.role,onChange:ev=>set("role",ev.target.value)})),
+            h('div',null,h('label',lbl,"Industry"),h('input',{...inp,placeholder:"e.g. FinTech",value:form.industry,onChange:ev=>set("industry",ev.target.value)}))),
+          h('div',{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}},
+            h('div',null,h('label',lbl,"Tone"),
+              h('select',{...inp,value:form.tone,onChange:ev=>set("tone",ev.target.value)},
+                ...["Professional","Conversational","Bold & Direct","Warm & Approachable","Creative"].map(o=>h('option',{key:o},o)))),
+            h('div',null,h('label',lbl,"Primary Goal"),
+              h('select',{...inp,value:form.goal,onChange:ev=>set("goal",ev.target.value)},
+                ...["Open to opportunities","Attract clients","Build personal brand","Network","Showcase expertise"].map(o=>h('option',{key:o},o))))),
+          h('div',null,h('label',lbl,"Top Skills"),h('input',{...inp,placeholder:"e.g. Product Strategy, Data Analysis",value:form.skills,onChange:ev=>set("skills",ev.target.value)})),
+          h('div',null,h('label',lbl,"Proudest Achievement"),h('input',{...inp,placeholder:"e.g. Grew revenue 5x in 18 months",value:form.achievement,onChange:ev=>set("achievement",ev.target.value)}))),
+        error&&h('div',{style:{marginTop:14,color:"#EF4444",fontSize:13,fontWeight:600}},error),
+        h('button',{onClick:submit,disabled:loading,style:{marginTop:22,width:"100%",background:loading?SKY:`linear-gradient(135deg,${BLUE},${NAVY})`,color:"#fff",border:"none",borderRadius:10,padding:15,fontSize:15,fontWeight:900,display:"flex",alignItems:"center",justifyContent:"center",gap:8,boxShadow:loading?"none":"0 4px 20px rgba(26,111,212,0.35)"}},
+          loading?[h('span',{key:"s",style:{width:16,height:16,border:"2px solid #fff",borderTopColor:"transparent",borderRadius:"50%",display:"inline-block",animation:"spin 0.7s linear infinite"}})," Optimizing..."]
+            :uses>=FREE_USES?"🔒 Unlock to Optimize — $9":"⚡ Optimize My LinkedIn Bio"),
+        uses<FREE_USES&&h('div',{style:{textAlign:"center",marginTop:10,fontSize:12,color:MUTED}},`✦ ${FREE_USES-uses} free optimization remaining`)),
+
+      result&&h('div',{className:"fadeUp",style:{display:"grid",gap:16}},
+        h('div',card,h(Meter,{score:result.score})),
+        h('div',{style:{...card.style,border:`2px solid ${BLUE}33`}},
+          h('div',{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}},
+            h('span',{style:{fontSize:11,fontWeight:800,color:BLUE,letterSpacing:"0.12em",textTransform:"uppercase"}},"✦ Optimized Bio"),
+            h(CopyBtn,{text:result.optimizedBio+"\n\n"+result.cta})),
+          h('p',{style:{margin:"0 0 16px",fontSize:15,lineHeight:1.8,color:TEXT}},result.optimizedBio),
+          h('div',{style:{borderTop:`1px solid ${BORDER}`,paddingTop:12}},
+            h('span',{style:{fontSize:11,fontWeight:700,color:MUTED,textTransform:"uppercase"}},"Closing CTA"),
+            h('p',{style:{margin:"4px 0 0",fontSize:13,color:"#555",fontStyle:"italic"}},result.cta))),
+        h('div',card,
+          h('div',{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}},
+            h('span',{style:{fontSize:11,fontWeight:800,color:MUTED,textTransform:"uppercase"}},"Headline Suggestion"),
+            h(CopyBtn,{text:result.headline})),
+          h('p',{style:{margin:0,fontSize:17,fontWeight:800,color:NAVY,lineHeight:1.5}},result.headline)),
+        h('div',card,
+          h('div',{style:{fontSize:11,fontWeight:800,color:MUTED,textTransform:"uppercase",marginBottom:12}},"SEO Keywords"),
+          h('div',null,...(result.keywords||[]).map((k,i)=>
+            h('span',{key:i,style:{display:"inline-block",background:BLUE+"12",color:BLUE,border:`1px solid ${BLUE}30`,borderRadius:5,padding:"3px 12px",fontSize:12,fontWeight:700,marginRight:7,marginBottom:7,fontFamily:"monospace"}},k)))),
+        h('div',{style:{background:"#FFFBEB",borderRadius:14,border:`1px solid ${GOLD}44`,padding:24}},
+          h('div',{style:{fontSize:11,fontWeight:800,color:"#92400E",textTransform:"uppercase",marginBottom:14}},"💡 Improvement Tips"),
+          h('ul',{style:{margin:0,padding:"0 0 0 18px",display:"grid",gap:10}},
+            ...(result.improvements||[]).map((t,i)=>h('li',{key:i,style:{fontSize:13,color:"#555",lineHeight:1.7}},t)))),
+        uses>=FREE_USES&&h('div',{style:{background:NAVY,borderRadius:14,padding:28,textAlign:"center",color:"#fff"}},
+          h('div',{style:{fontSize:18,fontWeight:900,marginBottom:8}},"Want to optimize again?"),
+          h('p',{style:{color:"#94A3B8",fontSize:13,marginBottom:20}},"Unlock unlimited optimizations for a one-time $9 payment."),
+          h('a',{href:STRIPE_PAYMENT_LINK,target:"_blank",style:{display:"inline-block",background:GOLD,color:NAVY,borderRadius:8,padding:"12px 28px",fontSize:14,fontWeight:900,textDecoration:"none"}},"Unlock BioBoost — $9")))),
+
+    h('footer',{style:{borderTop:`1px solid ${BORDER}`,padding:"20px 24px",textAlign:"center"}},
+      h('div',{style:{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:6}},h(Logo,{size:20}),
+        h('span',{style:{fontFamily:"Georgia,serif",fontSize:15,fontWeight:900,letterSpacing:"-0.03em",color:NAVY}},"Bio",h('span',{style:{color:BLUE}},"Boost"))),
+      h('p',{style:{margin:0,fontSize:12,color:MUTED}},"Secure payments via Stripe · Your data is never stored")))
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(h(App));
+</script>
+</body>
+</html>
+EOF
