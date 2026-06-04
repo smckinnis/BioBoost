@@ -1,15 +1,271 @@
+cat > /mnt/user-data/outputs/index.html << 'HTMLEOF'
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>BioBoost</title>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="text/babel" src="App.js"></script>
-  </body>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BioBoost – LinkedIn Bio Optimizer</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Georgia, 'Times New Roman', serif; background: #F3F2EF; }
+    input, textarea, select { width: 100%; background: #F7F7F5; border: 1.5px solid #E2E0D9; border-radius: 8px; padding: 10px 14px; font-size: 14px; font-family: Georgia, serif; color: #1C1C1A; outline: none; transition: border-color 0.2s; }
+    input:focus, textarea:focus, select:focus { border-color: #1A6FD4; box-shadow: 0 0 0 3px rgba(26,111,212,0.1); }
+    button { cursor: pointer; font-family: Georgia, serif; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes fadeUp { from { opacity:0; transform:translateY(18px); } to { opacity:1; transform:translateY(0); } }
+    .fade-up { animation: fadeUp 0.5s ease; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const STRIPE_PAYMENT_LINK = "https://buy.stripe.com/fZueVedbv6Bgb2zewc9sk00";
+const FREE_USES = 1;
+const STORAGE_KEY = "bioboost_uses";
+const C = { navy:"#0D1B2A", blue:"#1A6FD4", sky:"#38BDF8", gold:"#F59E0B", offwhite:"#F3F2EF", border:"#E2E0D9", muted:"#8A8A82", text:"#1C1C1A" };
+const e = React.createElement;
+const { useState, useEffect } = React;
+
+function Logo({ size=40 }) {
+  return e('svg', { width:size, height:size, viewBox:"0 0 40 40", fill:"none" },
+    e('defs', null,
+      e('linearGradient', { id:"lg", x1:"0", y1:"0", x2:"40", y2:"40", gradientUnits:"userSpaceOnUse" },
+        e('stop', { offset:"0%", stopColor:C.blue }),
+        e('stop', { offset:"100%", stopColor:C.sky })
+      )
+    ),
+    e('rect', { width:40, height:40, rx:10, fill:C.navy }),
+    e('path', { d:"M23 6L13 22h8l-4 12 14-18h-9l4-10z", fill:"url(#lg)" }),
+    e('circle', { cx:31, cy:9, r:2.5, fill:C.gold })
+  );
+}
+
+function Wordmark({ size="lg" }) {
+  const fs = size==="lg" ? "20px" : size==="xl" ? "26px" : "15px";
+  return e('span', { style:{ fontFamily:"Georgia,serif", fontSize:fs, fontWeight:900, letterSpacing:"-0.03em", color:C.navy } },
+    "Bio", e('span', { style:{ color:C.blue } }, "Boost")
+  );
+}
+
+function ScoreMeter({ score }) {
+  const color = score>=80 ? "#22C55E" : score>=55 ? C.gold : "#EF4444";
+  const label = score>=80 ? "Strong Profile" : score>=55 ? "Room to Grow" : "Needs Work";
+  return e('div', null,
+    e('div', { style:{ display:"flex", justifyContent:"space-between", alignItems:"flex-end", marginBottom:8 } },
+      e('div', null,
+        e('div', { style:{ fontSize:11, fontWeight:700, letterSpacing:"0.12em", textTransform:"uppercase", color:C.muted, marginBottom:2 } }, "Profile Strength"),
+        e('div', { style:{ fontSize:12, fontWeight:700, color, letterSpacing:"0.06em" } }, label)
+      ),
+      e('div', { style:{ fontSize:42, fontWeight:900, color, fontFamily:"monospace", lineHeight:1 } },
+        score, e('span', { style:{ fontSize:16, color:C.muted } }, "/100")
+      )
+    ),
+    e('div', { style:{ height:10, background:C.border, borderRadius:99, overflow:"hidden" } },
+      e('div', { style:{ height:"100%", width:`${score}%`, borderRadius:99, background:`linear-gradient(90deg,${color}99,${color})`, transition:"width 1.2s cubic-bezier(0.4,0,0.2,1)" } })
+    )
+  );
+}
+
+function CopyBtn({ text }) {
+  const [copied, setCopied] = useState(false);
+  return e('button', {
+    onClick: () => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(()=>setCopied(false),2000); },
+    style:{ background:copied?"#22C55E":C.blue, color:"#fff", border:"none", borderRadius:6, padding:"7px 16px", fontSize:12, fontWeight:700, letterSpacing:"0.04em", transition:"background 0.2s" }
+  }, copied ? "✓ Copied!" : "Copy");
+}
+
+function PaywallModal({ onClose }) {
+  return e('div', { style:{ position:"fixed", inset:0, background:"rgba(13,27,42,0.75)", zIndex:100, display:"flex", alignItems:"center", justifyContent:"center", padding:20 } },
+    e('div', { style:{ background:"#fff", borderRadius:16, padding:"36px 32px", maxWidth:420, width:"100%", textAlign:"center", boxShadow:"0 32px 80px rgba(0,0,0,0.25)" } },
+      e('div', { style:{ display:"flex", alignItems:"center", justifyContent:"center", gap:10, marginBottom:20 } }, e(Logo,{size:36}), e(Wordmark,{size:"lg"})),
+      e('div', { style:{ fontSize:22, fontWeight:900, color:C.navy, marginBottom:8, lineHeight:1.3 } }, "You've used your free optimization ⚡"),
+      e('p', { style:{ color:C.muted, fontSize:14, marginBottom:24, lineHeight:1.6 } }, "Unlock ", e('strong',null,"unlimited bio optimizations"), ", headline rewrites, and keyword suggestions for a one-time payment."),
+      e('div', { style:{ background:C.offwhite, borderRadius:10, padding:16, marginBottom:24, textAlign:"left" } },
+        ...["Unlimited LinkedIn bio optimizations","AI headline suggestions","SEO keyword recommendations","Profile strength scoring","Instant copy-to-clipboard"].map((b,i) =>
+          e('div', { key:i, style:{ display:"flex", alignItems:"center", gap:10, padding:"5px 0", fontSize:13, color:C.text } },
+            e('span', { style:{ color:"#22C55E", fontWeight:900, fontSize:16 } }, "✓"), " "+b
+          )
+        )
+      ),
+      e('a', { href:STRIPE_PAYMENT_LINK, target:"_blank", rel:"noopener noreferrer", style:{ display:"block", background:C.blue, color:"#fff", borderRadius:10, padding:16, fontSize:16, fontWeight:900, textDecoration:"none", marginBottom:10 } }, "Unlock BioBoost — $9 one-time"),
+      e('div', { style:{ fontSize:11, color:C.muted, marginBottom:16 } }, "Secure payment via Stripe · No subscription · No hidden fees"),
+      e('button', { onClick:onClose, style:{ background:"none", border:"none", color:C.muted, fontSize:13, textDecoration:"underline" } }, "Maybe later")
+    )
+  );
+}
+
+function App() {
+  const [uses, setUses] = useState(0);
+  const [showPaywall, setShowPaywall] = useState(false);
+  const [form, setForm] = useState({ currentBio:"", role:"", industry:"", tone:"Professional", goal:"Open to opportunities", skills:"", achievement:"" });
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => { setUses(parseInt(localStorage.getItem(STORAGE_KEY)||"0")); }, []);
+
+  const set = (k,v) => setForm(f=>({...f,[k]:v}));
+
+  const submit = async () => {
+    if (!form.role && !form.currentBio) { setError("Please fill in at least your role or existing bio."); return; }
+    if (uses >= FREE_USES) { setShowPaywall(true); return; }
+    setError(""); setLoading(true); setResult(null);
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body:JSON.stringify({
+          model:"claude-sonnet-4-20250514", max_tokens:1000,
+          messages:[{ role:"user", content:`You are an expert LinkedIn profile optimizer. Optimize this person's LinkedIn bio.
+Details:
+- Current bio: ${form.currentBio||"None"}
+- Role: ${form.role||"Not specified"}
+- Industry: ${form.industry||"Not specified"}
+- Tone: ${form.tone}
+- Goal: ${form.goal}
+- Skills: ${form.skills||"Not specified"}
+- Achievement: ${form.achievement||"Not specified"}
+Respond ONLY with valid JSON (no markdown):
+{"score":<0-100>,"optimizedBio":"<compelling bio>","headline":"<punchy headline under 120 chars>","keywords":["kw1","kw2","kw3","kw4","kw5"],"improvements":["tip1","tip2","tip3"],"cta":"<closing call to action>"}`
+          }]
+        })
+      });
+      const data = await res.json();
+      const text = data.content.map(i=>i.text||"").join("");
+      const parsed = JSON.parse(text.replace(/```json|```/g,"").trim());
+      setResult(parsed);
+      const n = uses+1; setUses(n); localStorage.setItem(STORAGE_KEY,n);
+    } catch(err) { setError("Something went wrong. Please try again."); }
+    setLoading(false);
+  };
+
+  const inp = { style:{ width:"100%", background:"#F7F7F5", border:`1.5px solid ${C.border}`, borderRadius:8, padding:"10px 14px", fontSize:14, fontFamily:"Georgia,serif", color:C.text, outline:"none" } };
+  const lbl = { style:{ display:"block", fontSize:11, fontWeight:700, letterSpacing:"0.12em", textTransform:"uppercase", color:C.muted, marginBottom:6 } };
+
+  return e('div', { style:{ minHeight:"100vh", background:C.offwhite, fontFamily:"Georgia,serif" } },
+    showPaywall && e(PaywallModal, { onClose:()=>setShowPaywall(false) }),
+
+    // Header
+    e('header', { style:{ background:"#fff", borderBottom:`1px solid ${C.border}`, position:"sticky", top:0, zIndex:10 } },
+      e('div', { style:{ maxWidth:700, margin:"0 auto", padding:"16px 24px", display:"flex", alignItems:"center", justifyContent:"space-between" } },
+        e('div', { style:{ display:"flex", alignItems:"center", gap:12 } }, e(Logo,{size:36}), e(Wordmark,{size:"lg"})),
+        e('div', { style:{ display:"flex", alignItems:"center", gap:10 } },
+          e('span', { style:{ fontSize:12, color:C.muted, fontWeight:600 } }, `${Math.max(0,FREE_USES-uses)} free use${FREE_USES-uses!==1?"s":""} left`),
+          e('a', { href:STRIPE_PAYMENT_LINK, target:"_blank", style:{ background:C.gold, color:C.navy, borderRadius:6, padding:"8px 16px", fontSize:12, fontWeight:800, textDecoration:"none", letterSpacing:"0.04em" } }, "Go Pro — $9")
+        )
+      )
+    ),
+
+    // Hero
+    e('div', { style:{ background:C.navy, color:"#fff", padding:"52px 24px 48px", textAlign:"center" } },
+      e('div', { style:{ maxWidth:580, margin:"0 auto" } },
+        e('div', { style:{ display:"inline-flex", alignItems:"center", gap:6, background:"rgba(245,158,11,0.15)", border:"1px solid rgba(245,158,11,0.3)", borderRadius:99, padding:"4px 14px", marginBottom:18 } },
+          e('span', { style:{ color:C.gold, fontSize:12, fontWeight:700, letterSpacing:"0.08em" } }, "⚡ AI-POWERED")
+        ),
+        e('h1', { style:{ margin:"0 0 14px", fontSize:"clamp(26px,5vw,40px)", fontWeight:900, lineHeight:1.15, letterSpacing:"-0.03em" } },
+          "Your LinkedIn bio is", e('br'), e('span', { style:{ color:C.sky } }, "costing you opportunities.")
+        ),
+        e('p', { style:{ margin:"0 auto", maxWidth:460, color:"#94A3B8", fontSize:15, lineHeight:1.7 } },
+          "BioBoost rewrites your LinkedIn About section into a recruiter magnet — with a headline, SEO keywords, and a strength score."
+        )
+      )
+    ),
+
+    // Main content
+    e('div', { style:{ maxWidth:700, margin:"0 auto", padding:"32px 24px 60px" } },
+
+      // Form
+      e('div', { style:{ background:"#fff", borderRadius:14, border:`1px solid ${C.border}`, padding:28, marginBottom:24, boxShadow:"0 2px 12px rgba(0,0,0,0.04)" } },
+        e('h2', { style:{ margin:"0 0 22px", fontSize:13, fontWeight:800, color:C.navy, letterSpacing:"0.12em", textTransform:"uppercase" } }, "Your Profile Details"),
+        e('div', { style:{ display:"grid", gap:18 } },
+          e('div', null,
+            e('label', lbl, "Current Bio (optional)"),
+            e('textarea', { ...inp, rows:3, placeholder:"Paste your existing LinkedIn About section, or leave blank...", onChange:ev=>set("currentBio",ev.target.value), value:form.currentBio, style:{...inp.style, resize:"vertical"} })
+          ),
+          e('div', { style:{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 } },
+            e('div', null, e('label', lbl, "Job Title / Role *"), e('input', { ...inp, placeholder:"e.g. Senior Product Manager", value:form.role, onChange:ev=>set("role",ev.target.value) })),
+            e('div', null, e('label', lbl, "Industry"), e('input', { ...inp, placeholder:"e.g. FinTech, Healthcare", value:form.industry, onChange:ev=>set("industry",ev.target.value) }))
+          ),
+          e('div', { style:{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 } },
+            e('div', null, e('label', lbl, "Tone"),
+              e('select', { ...inp, value:form.tone, onChange:ev=>set("tone",ev.target.value) },
+                ...["Professional","Conversational","Bold & Direct","Warm & Approachable","Creative"].map(o=>e('option',{key:o},o))
+              )
+            ),
+            e('div', null, e('label', lbl, "Primary Goal"),
+              e('select', { ...inp, value:form.goal, onChange:ev=>set("goal",ev.target.value) },
+                ...["Open to opportunities","Attract clients / freelance work","Build personal brand","Network in my industry","Showcase expertise"].map(o=>e('option',{key:o},o))
+              )
+            )
+          ),
+          e('div', null, e('label', lbl, "Top Skills (comma-separated)"), e('input', { ...inp, placeholder:"e.g. Product Strategy, Data Analysis", value:form.skills, onChange:ev=>set("skills",ev.target.value) })),
+          e('div', null, e('label', lbl, "Proudest Achievement"), e('input', { ...inp, placeholder:"e.g. Grew ARR from $2M to $10M in 18 months", value:form.achievement, onChange:ev=>set("achievement",ev.target.value) }))
+        ),
+        error && e('div', { style:{ marginTop:14, color:"#EF4444", fontSize:13, fontWeight:600 } }, error),
+        e('button', {
+          onClick: submit, disabled: loading,
+          style:{ marginTop:22, width:"100%", background:loading?C.sky:`linear-gradient(135deg,${C.blue},${C.navy})`, color:"#fff", border:"none", borderRadius:10, padding:15, fontSize:15, fontWeight:900, letterSpacing:"0.04em", display:"flex", alignItems:"center", justifyContent:"center", gap:8, boxShadow:loading?"none":"0 4px 20px rgba(26,111,212,0.35)", transition:"all 0.2s" }
+        },
+          loading
+            ? [e('span',{key:"s",style:{width:16,height:16,border:"2px solid #fff",borderTopColor:"transparent",borderRadius:"50%",display:"inline-block",animation:"spin 0.7s linear infinite"}}), " Optimizing your bio..."]
+            : (uses >= FREE_USES ? "🔒 Unlock to Optimize — $9" : "⚡ Optimize My LinkedIn Bio")
+        ),
+        uses < FREE_USES && e('div', { style:{ textAlign:"center", marginTop:10, fontSize:12, color:C.muted } }, `✦ ${FREE_USES-uses} free optimization remaining`)
+      ),
+
+      // Results
+      result && e('div', { className:"fade-up", style:{ display:"grid", gap:16 } },
+        e('div', { style:{ background:"#fff", borderRadius:14, border:`1px solid ${C.border}`, padding:24 } }, e(ScoreMeter,{score:result.score})),
+        e('div', { style:{ background:"#fff", borderRadius:14, border:`2px solid ${C.blue}33`, padding:24 } },
+          e('div', { style:{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 } },
+            e('span', { style:{ fontSize:11, fontWeight:800, color:C.blue, letterSpacing:"0.12em", textTransform:"uppercase" } }, "✦ Optimized Bio"),
+            e(CopyBtn, { text:result.optimizedBio+"\n\n"+result.cta })
+          ),
+          e('p', { style:{ margin:"0 0 16px", fontSize:15, lineHeight:1.8, color:C.text } }, result.optimizedBio),
+          e('div', { style:{ borderTop:`1px solid ${C.border}`, paddingTop:12 } },
+            e('span', { style:{ fontSize:11, fontWeight:700, color:C.muted, textTransform:"uppercase" } }, "Closing CTA"),
+            e('p', { style:{ margin:"4px 0 0", fontSize:13, color:"#555", fontStyle:"italic" } }, result.cta)
+          )
+        ),
+        e('div', { style:{ background:"#fff", borderRadius:14, border:`1px solid ${C.border}`, padding:24 } },
+          e('div', { style:{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 } },
+            e('span', { style:{ fontSize:11, fontWeight:800, color:C.muted, textTransform:"uppercase" } }, "Headline Suggestion"),
+            e(CopyBtn, { text:result.headline })
+          ),
+          e('p', { style:{ margin:0, fontSize:17, fontWeight:800, color:C.navy, lineHeight:1.5 } }, result.headline)
+        ),
+        e('div', { style:{ background:"#fff", borderRadius:14, border:`1px solid ${C.border}`, padding:24 } },
+          e('div', { style:{ fontSize:11, fontWeight:800, color:C.muted, textTransform:"uppercase", marginBottom:12 } }, "SEO Keywords to Include"),
+          e('div', null, ...(result.keywords||[]).map((k,i)=>
+            e('span', { key:i, style:{ display:"inline-block", background:C.blue+"12", color:C.blue, border:`1px solid ${C.blue}30`, borderRadius:5, padding:"3px 12px", fontSize:12, fontWeight:700, marginRight:7, marginBottom:7, fontFamily:"monospace" } }, k)
+          ))
+        ),
+        e('div', { style:{ background:"#FFFBEB", borderRadius:14, border:`1px solid ${C.gold}44`, padding:24 } },
+          e('div', { style:{ fontSize:11, fontWeight:800, color:"#92400E", textTransform:"uppercase", marginBottom:14 } }, "💡 Improvement Tips"),
+          e('ul', { style:{ margin:0, padding:"0 0 0 18px", display:"grid", gap:10 } },
+            ...(result.improvements||[]).map((tip,i)=>e('li',{key:i,style:{fontSize:13,color:"#555",lineHeight:1.7}},tip))
+          )
+        ),
+        uses >= FREE_USES && e('div', { style:{ background:C.navy, borderRadius:14, padding:28, textAlign:"center", color:"#fff" } },
+          e('div', { style:{ fontSize:18, fontWeight:900, marginBottom:8 } }, "Want to optimize again?"),
+          e('p', { style:{ color:"#94A3B8", fontSize:13, marginBottom:20 } }, "Unlock unlimited optimizations for a one-time $9 payment."),
+          e('a', { href:STRIPE_PAYMENT_LINK, target:"_blank", style:{ display:"inline-block", background:C.gold, color:C.navy, borderRadius:8, padding:"12px 28px", fontSize:14, fontWeight:900, textDecoration:"none" } }, "Unlock BioBoost — $9")
+        )
+      )
+    ),
+
+    // Footer
+    e('footer', { style:{ borderTop:`1px solid ${C.border}`, padding:"20px 24px", textAlign:"center" } },
+      e('div', { style:{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, marginBottom:6 } }, e(Logo,{size:20}), e(Wordmark,{size:"sm"})),
+      e('p', { style:{ margin:0, fontSize:12, color:C.muted } }, "Secure payments via Stripe · Your data is never stored")
+    )
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(e(App));
+</script>
+</body>
 </html>
+HTMLEOF
